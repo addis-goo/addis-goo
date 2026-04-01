@@ -41,45 +41,33 @@ const translations = {
 
 // --- 2. THE HOLIDAY ORACLE ---
 function getHolidaysForYear(ethYear) {
-    let h = {
-        '1-1': { en: "Enkutatash (New Year)", am: "እንቁጣጣሽ" },
+    return {
+        '1-1': { en: "Enkutatash", am: "እንቁጣጣሽ" },
         '1-17': { en: "Meskel", am: "መስቀል" },
-        '4-29': { en: "Genna (Christmas)", am: "ገና" },
-        '5-11': { en: "Timket (Epiphany)", am: "ጥምቀት" },
-        '6-23': { en: "Adwa Victory Day", am: "የዓድዋ ድል" },
-        '8-27': { en: "Patriots' Day", am: "የአርበኞች ቀን" },
-        '9-18': { en: "Eid al-Adha", am: "ኢድ አል-አድሃ" },
-        '9-20': { en: "Downfall of Derg", am: "የደርግ ውድቀት" },
-        '12-12': { en: "Mawlid", am: "መውሊድ" }
+        '4-29': { en: "Genna", am: "ገና" },
+        '5-11': { en: "Timket", am: "ጥምቀት" },
+        '6-23': { en: "Adwa Victory", am: "የዓድዋ ድል" }
     };
-    return h;
 }
 
-// --- 3. THE CALENDAR ENGINE (FIXED FOR WEDNESDAY & ALL YEARS) ---
+// --- 3. THE CALENDAR ENGINE (FIXED) ---
 function getEthioDate(date) {
     const gYear = date.getFullYear();
     const gMonth = date.getMonth() + 1;
     const gDay = date.getDate();
-
     let ethYear = gYear - 8;
     const isLeap = (gYear % 4 === 0);
-    const newYearSeptDay = isLeap ? 12 : 11;
-
-    if (gMonth > 9 || (gMonth === 9 && gDay >= newYearSeptDay)) {
-        ethYear = gYear - 7;
+    const ny = isLeap ? 12 : 11;
+    if (gMonth > 9 || (gMonth === 9 && gDay >= ny)) ethYear = gYear - 7;
+    const m1 = new Date(gYear, 8, ny);
+    if (date < m1) {
+        m1.setFullYear(gYear - 1);
+        m1.setDate((gYear - 1) % 4 === 0 ? 12 : 11);
     }
-
-    const meskerem1 = new Date(gYear, 8, newYearSeptDay);
-    if (date < meskerem1) {
-        meskerem1.setFullYear(gYear - 1);
-        meskerem1.setDate((gYear - 1) % 4 === 0 ? 12 : 11);
-    }
-
-    const diffDays = Math.floor((date - meskerem1) / (1000 * 60 * 60 * 24));
-    let ethMonth = Math.floor(diffDays / 30) + 1;
-    let ethDay = (diffDays % 30) + 1;
-
-    if (ethMonth > 13) { ethMonth = 13; ethDay = diffDays - 360 + 1; }
+    const diff = Math.floor((date - m1) / 86400000);
+    let ethMonth = Math.floor(diff / 30) + 1;
+    let ethDay = (diff % 30) + 1;
+    if (ethMonth > 13) { ethMonth = 13; ethDay = diff - 360 + 1; }
     return { day: ethDay, month: ethMonth, year: ethYear };
 }
 
@@ -87,56 +75,54 @@ function renderFullCalendar() {
     const grid = document.getElementById('calendar-grid');
     const title = document.getElementById('cal-month-year');
     const eth = getEthioDate(viewDate);
-    
     title.innerText = `${translations[currentLang].ethMonths[eth.month - 1]} ${eth.year}`;
-
     let html = "";
     const weekDays = currentLang === 'en' ? ['S','M','T','W','T','F','S'] : ['እ','ሰ','ማ','ረ','ሐ','ዓ','ቅ'];
     weekDays.forEach(d => html += `<div style="color:#94a3b8; font-size:11px; padding-bottom:10px;">${d}</div>`);
+    
+    // Find weekday of 1st day of current eth month
+    const firstG = new Date(viewDate);
+    firstG.setDate(viewDate.getDate() - (eth.day - 1));
+    const padding = firstG.getDay();
 
-    const firstOfEthMonth = new Date(viewDate);
-    firstOfEthMonth.setDate(viewDate.getDate() - (eth.day - 1));
-    const startPadding = firstOfEthMonth.getDay();
+    for (let p = 0; p < padding; p++) html += `<div></div>`;
 
-    for (let p = 0; p < startPadding; p++) html += `<div></div>`;
-
-    const totalDays = eth.month === 13 ? (eth.year % 4 === 3 ? 6 : 5) : 30;
-    const todayEth = getEthioDate(new Date());
+    const total = eth.month === 13 ? (eth.year % 4 === 3 ? 6 : 5) : 30;
+    const today = getEthioDate(new Date());
     const holidays = getHolidaysForYear(eth.year);
 
-    for (let i = 1; i <= totalDays; i++) {
+    for (let i = 1; i <= total; i++) {
         const key = `${eth.month}-${i}`;
-        const isHoliday = !!holidays[key];
-        
-        const currentIterDate = new Date(firstOfEthMonth);
-        currentIterDate.setDate(firstOfEthMonth.getDate() + (i - 1));
-        const isWeekend = (currentIterDate.getDay() === 0 || currentIterDate.getDay() === 6);
-        
-        const statusColor = (isHoliday || isWeekend) ? "#ef4444" : "#22c55e";
-        const isToday = (i === todayEth.day && eth.month === todayEth.month && eth.year === todayEth.year);
+        const iterG = new Date(firstG);
+        iterG.setDate(firstG.getDate() + (i - 1));
+        const isWeekend = (iterG.getDay() === 0 || iterG.getDay() === 6);
+        const isToday = (i === today.day && eth.month === today.month && eth.year === today.year);
         
         html += `<div onclick="checkDayStatus(${i}, ${eth.month})" style="padding:10px; cursor:pointer; background:${isToday ? "#fef3c7" : "transparent"}; border-radius:10px; border:${isToday ? "2px solid #f59e0b" : "1px solid #f1f5f9"};">
-                <span style="font-size:14px; font-weight:bold;">${i}</span>
-                <div style="width:6px; height:6px; background:${statusColor}; border-radius:50%; margin: 4px auto 0;"></div>
-            </div>`;
+                    <span style="font-size:14px; font-weight:bold;">${i}</span>
+                    <div style="width:6px; height:6px; background:${(holidays[key] || isWeekend) ? "#ef4444" : "#22c55e"}; border-radius:50%; margin: 4px auto 0;"></div>
+                </div>`;
     }
     grid.innerHTML = html;
 }
 
-// --- 4. DATA SYNC & UI ---
+// --- 4. DATA SYNC (FIXED CURRENCY) ---
 async function syncLiveForex() {
     const list = document.getElementById('curr-list');
+    if(!list) return;
     try {
         const res = await fetch('https://open.er-api.com/v6/latest/USD');
         const data = await res.json();
-        const baseUSD = 157.15; 
-        const currencies = [{code:'USD', f:'🇺🇸'}, {code:'EUR', f:'🇪🇺'}, {code:'GBP', f:'🇬🇧'}];
+        const base = 157.05; 
+        const codes = [{c:'USD', f:'🇺🇸'}, {c:'EUR', f:'🇪🇺'}, {c:'GBP', f:'🇬🇧'}, {c:'CAD', f:'🇨🇦'}, {c:'AED', f:'🇦🇪'}];
         
-        list.innerHTML = currencies.map(c => {
-            const val = c.code === 'USD' ? baseUSD : (baseUSD / data.rates[c.code]);
-            return `<div class="row"><span>${c.f} ${c.code}</span><b id="tick-${c.code.toLowerCase()}">${val.toFixed(2)}</b></div>`;
+        list.innerHTML = codes.map(curr => {
+            const val = curr.c === 'USD' ? base : (base / data.rates[curr.c]);
+            return `<div class="row" style="display:flex; justify-content:space-between; padding:5px 0;">
+                <span>${curr.f} ${curr.c}</span><b id="tick-${curr.c.toLowerCase()}">${val.toFixed(2)}</b>
+            </div>`;
         }).join('');
-    } catch (e) { if(list) list.innerHTML = "Forex Sync Error"; }
+    } catch (e) { list.innerHTML = "Sync Error"; }
 }
 
 async function syncAddisWeather() {
@@ -169,14 +155,12 @@ function updateCalendarBox() {
 
 function startLiveTicker() {
     setInterval(() => {
-        ['tick-usd', 'tick-benz', 'tick-temp'].forEach(id => {
+        ['tick-usd', 'tick-eur', 'tick-temp'].forEach(id => {
             const el = document.getElementById(id);
             if (el) {
                 let current = parseFloat(el.innerText) || 0;
                 let jitter = (Math.random() * 0.04 - 0.02);
                 el.innerText = (current + jitter).toFixed(2);
-                el.style.color = jitter > 0 ? "#10b981" : "#ef4444";
-                setTimeout(() => el.style.color = "#d29922", 1000);
             }
         });
     }, 4000);
@@ -201,11 +185,10 @@ function checkDayStatus(day, month) {
     const eth = getEthioDate(viewDate);
     const holidays = getHolidaysForYear(eth.year);
     const key = `${month}-${day}`;
-    
     if (holidays[key]) {
-        info.innerHTML = `<b style="color:#b91c1c; font-size:18px;">✨ ${holidays[key][currentLang]}</b><br><span style="color:#ef4444; font-weight:bold;">🚫 NATIONAL HOLIDAY</span>`;
+        info.innerHTML = `<b>✨ ${holidays[key][currentLang]}</b><br><span style="color:#ef4444;">🚫 HOLIDAY</span>`;
     } else {
-        info.innerHTML = `<b>Regular Day</b><br><span style="color:#22c55e;">💼 BUSINESS AS USUAL</span>`;
+        info.innerHTML = `<b>Regular Day</b><br><span style="color:#22c55e;">💼 BUSINESS</span>`;
     }
 }
 
@@ -220,18 +203,14 @@ function openComparison() {
     const sName = document.getElementById('start').value;
     const dName = document.getElementById('dest').value;
     if(!sName || !dName) return;
-
     const startCoords = hubs[sName], destCoords = hubs[dName];
     const dist = (map.distance(startCoords, destCoords)/1000).toFixed(1);
-
     if (routeLine) map.removeLayer(routeLine);
     routeLine = L.polyline([startCoords, destCoords], {color: '#d29922', weight: 4, dashArray: '10, 10'}).addTo(map);
     map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
-
     document.getElementById('route-km').innerText = `${dist} KM`;
     document.getElementById('route-title').innerText = `${sName} ➔ ${dName}`;
     document.body.classList.add('split-active');
-    
     document.getElementById('vertical-ride-list').innerHTML = providersRaw.map((p, i) => {
         const price = Math.round(p.base + (p.perKm * dist));
         return `<div class="ride-box" onclick="showFinal('${translations[currentLang].providers[i]}', ${price})">
@@ -268,7 +247,7 @@ window.onload = () => {
         let li = document.createElement('li');
         li.innerHTML = `📍 ${name}`;
         li.onclick = () => handleMapClick(name);
-        const hubList = document.getElementById('hub-list');
-        if(hubList) hubList.appendChild(li);
+        const hl = document.getElementById('hub-list');
+        if(hl) hl.appendChild(li);
     });
 };
