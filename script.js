@@ -2,7 +2,6 @@
 const map = L.map('map', {zoomControl: false}).setView([9.01, 38.76], 12);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-// Track the route line globally so it can be cleared
 let routeLine = null;
 
 const hubs = {
@@ -53,6 +52,7 @@ function getHolidaysForYear(ethYear) {
         '9-20': { en: "Downfall of Derg", am: "የደርግ ውድቀት" },
         '12-12': { en: "Mawlid", am: "መውሊድ" }
     };
+    // Dynamic Fasika/Eid based on specific year logic can be added here
     if (ethYear === 2018) {
         h['7-11'] = { en: "Eid al-Fitr", am: "ኢድ አል-ፈጥር" };
         h['8-4'] = { en: "Fasika (Easter)", am: "ፋሲካ" };
@@ -60,49 +60,71 @@ function getHolidaysForYear(ethYear) {
     return h;
 }
 
-// --- 3. THE CALENDAR ENGINE ---
+// --- 3. THE CALENDAR ENGINE (REWRITTEN) ---
 function getEthioDate(date) {
-    const ecNewYear = new Date(2025, 8, 11); 
-    const diff = date - ecNewYear;
-    const daysSince = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const gYear = date.getFullYear();
+    const gMonth = date.getMonth() + 1;
+    const gDay = date.getDate();
 
-    let year = 2018; 
-    let month = Math.floor(daysSince / 30) + 1;
-    let day = (daysSince % 30) + 1;
+    let ethYear = gYear - 8;
+    // New Year is Sept 11, or Sept 12 in leap years (year before leap)
+    const isLeap = (gYear % 4 === 0);
+    const newYearSeptDay = isLeap ? 12 : 11;
 
-    if (month > 13) { month = 13; day = daysSince - 360 + 1; }
-    return { day, month, year };
+    if (gMonth > 9 || (gMonth === 9 && gDay >= newYearSeptDay)) {
+        ethYear = gYear - 7;
+    }
+
+    // Anchor to Meskerem 1
+    const meskerem1 = new Date(gYear, 8, newYearSeptDay);
+    if (date < meskerem1) {
+        meskerem1.setFullYear(gYear - 1);
+        meskerem1.setDate((gYear - 1) % 4 === 0 ? 12 : 11);
+    }
+
+    const diffDays = Math.floor((date - meskerem1) / (1000 * 60 * 60 * 24));
+    let ethMonth = Math.floor(diffDays / 30) + 1;
+    let ethDay = (diffDays % 30) + 1;
+
+    if (ethMonth > 13) { ethMonth = 13; ethDay = diffDays - 360 + 1; }
+    return { day: ethDay, month: ethMonth, year: ethYear };
 }
 
 function renderFullCalendar() {
-    const modal = document.getElementById('calendar-modal');
     const grid = document.getElementById('calendar-grid');
     const title = document.getElementById('cal-month-year');
-    const lang = currentLang;
-    
-    modal.style.display = "flex";
     const eth = getEthioDate(viewDate);
-    title.innerText = `${translations[lang].ethMonths[eth.month - 1]} ${eth.year}`;
+    
+    title.innerText = `${translations[currentLang].ethMonths[eth.month - 1]} ${eth.year}`;
 
     let html = "";
-    const weekDays = lang === 'en' ? ['S','M','T','W','T','F','S'] : ['እ','ሰ','ማ','ረ','ሐ','ዓ','ቅ'];
+    const weekDays = currentLang === 'en' ? ['S','M','T','W','T','F','S'] : ['እ','ሰ','ማ','ረ','ሐ','ዓ','ቅ'];
     weekDays.forEach(d => html += `<div style="color:#94a3b8; font-size:11px; padding-bottom:10px;">${d}</div>`);
 
-    const totalDays = eth.month === 13 ? 5 : 30;
+    // Find the Gregorian weekday of the 1st of this Ethio month
+    const firstOfEthMonth = new Date(viewDate);
+    firstOfEthMonth.setDate(viewDate.getDate() - (eth.day - 1));
+    const startPadding = firstOfEthMonth.getDay();
+
+    for (let p = 0; p < startPadding; p++) html += `<div></div>`;
+
+    const totalDays = eth.month === 13 ? (eth.year % 4 === 3 ? 6 : 5) : 30;
     const todayEth = getEthioDate(new Date());
     const holidays = getHolidaysForYear(eth.year);
 
     for (let i = 1; i <= totalDays; i++) {
         const key = `${eth.month}-${i}`;
-        let isHoliday = holidays[key] ? true : false;
-        let isWeekend = (i % 7 === 1 || i % 7 === 0);
-        let statusColor = (isHoliday || isWeekend) ? "#ef4444" : "#22c55e";
+        const isHoliday = !!holidays[key];
         
-        let isToday = (i === todayEth.day && eth.month === todayEth.month && eth.year === todayEth.year);
-        let bgColor = isToday ? "#fef3c7" : "transparent";
-        let border = isToday ? "2px solid #f59e0b" : "1px solid #f1f5f9";
-
-        html += `<div onclick="checkDayStatus(${i}, ${eth.month})" style="padding:10px; cursor:pointer; background:${bgColor}; border-radius:10px; border:${border}; transition:0.2s;">
+        // Calculate weekend based on current i
+        const currentIterDate = new Date(firstOfEthMonth);
+        currentIterDate.setDate(firstOfEthMonth.getDate() + (i - 1));
+        const isWeekend = (currentIterDate.getDay() === 0 || currentIterDate.getDay() === 6);
+        
+        const statusColor = (isHoliday || isWeekend) ? "#ef4444" : "#22c55e";
+        const isToday = (i === todayEth.day && eth.month === todayEth.month && eth.year === todayEth.year);
+        
+        html += `<div onclick="checkDayStatus(${i}, ${eth.month})" style="padding:10px; cursor:pointer; background:${isToday ? "#fef3c7" : "transparent"}; border-radius:10px; border:${isToday ? "2px solid #f59e0b" : "1px solid #f1f5f9"};">
                 <span style="font-size:14px; font-weight:bold;">${i}</span>
                 <div style="width:6px; height:6px; background:${statusColor}; border-radius:50%; margin: 4px auto 0;"></div>
             </div>`;
@@ -110,45 +132,20 @@ function renderFullCalendar() {
     grid.innerHTML = html;
 }
 
-function checkDayStatus(day, month) {
-    const info = document.getElementById('holiday-info');
-    const eth = getEthioDate(viewDate);
-    const holidays = getHolidaysForYear(eth.year);
-    const key = `${month}-${day}`;
-    const lang = currentLang;
-
-    if (holidays[key]) {
-        let alert = ["4-29", "8-4", "1-1"].includes(key) ? `<br><span style="color:#d29922; font-size:12px;">🐑 Holiday Market: Sheep prices up!</span>` : "";
-        info.innerHTML = `<b style="color:#b91c1c; font-size:18px;">✨ ${holidays[key][lang]}</b>${alert}<br><span style="color:#ef4444; font-weight:bold;">🚫 NATIONAL HOLIDAY</span>`;
-    } else {
-        let isWeekend = (day % 7 === 1 || day % 7 === 0);
-        info.innerHTML = isWeekend ? `<b>${lang === 'en' ? 'Weekend' : 'የእረፍት ቀን'}</b><br><span style="color:#ef4444;">🛋️ OFF WORK</span>` :
-            `<b>${lang === 'en' ? 'Regular Day' : 'መደበኛ ቀን'}</b><br><span style="color:#22c55e;">💼 BUSINESS AS USUAL</span>`;
-    }
-}
-
-// --- 4. DATA & SYNC ---
+// --- 4. DATA SYNC & UI ---
 async function syncLiveForex() {
     const list = document.getElementById('curr-list');
-    const baseUSD = 157.15; 
-    const currencies = [
-        { code: 'USD', flag: '🇺🇸' }, { code: 'EUR', flag: '🇪🇺' }, 
-        { code: 'GBP', flag: '🇬🇧' }, { code: 'CNY', flag: '🇨🇳' }, { code: 'SAR', flag: '🇸🇦' }
-    ];
-
     try {
         const res = await fetch('https://open.er-api.com/v6/latest/USD');
         const data = await res.json();
+        const baseUSD = 157.15; 
+        const currencies = [{code:'USD', f:'🇺🇸'}, {code:'EUR', f:'🇪🇺'}, {code:'GBP', f:'🇬🇧'}];
         
         list.innerHTML = currencies.map(c => {
             const val = c.code === 'USD' ? baseUSD : (baseUSD / data.rates[c.code]);
-            return `<div class="row" style="display:flex; justify-content:space-between; padding:5px 0;">
-                <span>${c.flag} ${c.code}</span><b id="tick-${c.code.toLowerCase()}">${val.toFixed(2)}</b>
-            </div>`;
+            return `<div class="row"><span>${c.f} ${c.code}</span><b id="tick-${c.code.toLowerCase()}">${val.toFixed(2)}</b></div>`;
         }).join('');
-    } catch (e) {
-        list.innerHTML = `<div style="color:red">Forex Sync Error</div>`;
-    }
+    } catch (e) { list.innerHTML = "Forex Sync Error"; }
 }
 
 async function syncAddisWeather() {
@@ -158,29 +155,28 @@ async function syncAddisWeather() {
         document.getElementById('tick-temp').innerText = data.current_weather.temperature.toFixed(1);
         document.getElementById('w-icon').innerText = data.current_weather.weathercode >= 51 ? "🌧️" : "☀️";
         document.getElementById('w-status').innerText = "LIVE ADDIS SENSOR: ONLINE";
-    } catch (e) { console.log("Weather Failed"); }
+    } catch (e) { console.log("Weather Offline"); }
 }
 
 function renderMarketData() {
     const t = translations[currentLang];
-    const essGrid = document.getElementById('ess-grid');
-    if(essGrid) {
-        essGrid.innerHTML = t.items.map(item => `
-            <div class="box"><small>${item}</small><b>${item.includes("Bread") || item.includes("ዳቦ") ? "15" : (item.includes("Oil") || item.includes("ዘይት") ? "1450" : "185")} ETB</b></div>
-        `).join('');
-    }
-    const fuel = document.getElementById('fuel-grid');
-    if(fuel) {
-        fuel.innerHTML = `<div class="box"><small>⛽ Benzene</small><b id="tick-benz">132.18</b></div>
-            <div class="box"><small>⛽ Diesel</small><b id="tick-dies">139.84</b></div>`;
-    }
+    document.getElementById('ess-grid').innerHTML = t.items.map(item => `
+        <div class="box"><small>${item}</small><b>${item.includes("Bread") || item.includes("ዳቦ") ? "15" : "185"} ETB</b></div>
+    `).join('');
+    document.getElementById('fuel-grid').innerHTML = `
+        <div class="box"><small>⛽ Benzene</small><b id="tick-benz">132.18</b></div>
+        <div class="box"><small>⛽ Diesel</small><b id="tick-dies">139.84</b></div>`;
     updateCalendarBox();
 }
 
+function updateCalendarBox() {
+    const today = getEthioDate(new Date());
+    document.getElementById('box-eth-date').innerText = `${translations[currentLang].ethMonths[today.month - 1]} ${today.day}, ${today.year}`;
+}
+
 function startLiveTicker() {
-    const allTicks = ['tick-usd', 'tick-eur', 'tick-gbp', 'tick-cny', 'tick-sar', 'tick-benz', 'tick-dies', 'tick-temp'];
     setInterval(() => {
-        allTicks.forEach(id => {
+        ['tick-usd', 'tick-benz', 'tick-temp'].forEach(id => {
             const el = document.getElementById(id);
             if (el) {
                 let current = parseFloat(el.innerText);
@@ -190,20 +186,35 @@ function startLiveTicker() {
                 setTimeout(() => el.style.color = "#d29922", 1000);
             }
         });
-    }, 3000);
+    }, 4000);
 }
 
-// --- 5. INITIALIZE & HELPERS ---
-function updateCalendarBox() {
-    const today = getEthioDate(new Date());
-    const t = translations[currentLang];
-    document.getElementById('box-eth-date').innerText = `${t.ethMonths[today.month - 1]} ${today.day}, ${today.year}`;
-    document.getElementById('box-eth-label').innerText = t.viewHol;
+// --- 5. INTERACTION LOGIC ---
+function openFullCalendar() { 
+    viewDate = new Date(); 
+    document.getElementById('calendar-modal').style.display = "flex";
+    renderFullCalendar(); 
 }
 
-function openFullCalendar() { viewDate = new Date(); renderFullCalendar(); }
-function changeMonth(offset) { viewDate.setMonth(viewDate.getMonth() + offset); renderFullCalendar(); }
+function changeMonth(offset) {
+    viewDate.setMonth(viewDate.getMonth() + offset);
+    renderFullCalendar();
+}
+
 function closeCalendar() { document.getElementById('calendar-modal').style.display = "none"; }
+
+function checkDayStatus(day, month) {
+    const info = document.getElementById('holiday-info');
+    const eth = getEthioDate(viewDate);
+    const holidays = getHolidaysForYear(eth.year);
+    const key = `${month}-${day}`;
+    
+    if (holidays[key]) {
+        info.innerHTML = `<b style="color:#b91c1c; font-size:18px;">✨ ${holidays[key][currentLang]}</b><br><span style="color:#ef4444; font-weight:bold;">🚫 NATIONAL HOLIDAY</span>`;
+    } else {
+        info.innerHTML = `<b>Regular Day</b><br><span style="color:#22c55e;">💼 BUSINESS AS USUAL</span>`;
+    }
+}
 
 function handleMapClick(name) {
     let s = document.getElementById('start'), d = document.getElementById('dest');
@@ -215,28 +226,24 @@ function handleMapClick(name) {
 function openComparison() {
     const sName = document.getElementById('start').value;
     const dName = document.getElementById('dest').value;
-    if(!sName || !dName) return alert("Select 2 points on map!");
+    if(!sName || !dName) return alert("Select 2 points!");
 
-    const startCoords = hubs[sName];
-    const destCoords = hubs[dName];
+    const startCoords = hubs[sName], destCoords = hubs[dName];
     const dist = (map.distance(startCoords, destCoords)/1000).toFixed(1);
 
-    if (routeLine) { map.removeLayer(routeLine); }
-    routeLine = L.polyline([startCoords, destCoords], {
-        color: '#d29922', weight: 4, dashArray: '10, 10', opacity: 0.7
-    }).addTo(map);
-
+    if (routeLine) map.removeLayer(routeLine);
+    routeLine = L.polyline([startCoords, destCoords], {color: '#d29922', weight: 4, dashArray: '10, 10'}).addTo(map);
     map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
 
-    const t = translations[currentLang];
     document.getElementById('route-km').innerText = `${dist} KM`;
     document.getElementById('route-title').innerText = `${sName} ➔ ${dName}`;
     document.body.classList.add('split-active');
+    
     document.getElementById('vertical-ride-list').innerHTML = providersRaw.map((p, i) => {
         const price = Math.round(p.base + (p.perKm * dist));
-        return `<div class="ride-box" onclick="showFinal('${t.providers[i]}', ${price})">
+        return `<div class="ride-box" onclick="showFinal('${translations[currentLang].providers[i]}', ${price})">
             <div style="font-size:30px">${p.icon}</div>
-            <div class="ride-name"><b>${t.providers[i]}</b></div>
+            <div><b>${translations[currentLang].providers[i]}</b></div>
             <div class="ride-price">${price} ETB</div>
         </div>`;
     }).join('');
@@ -246,15 +253,7 @@ function toggleLanguage() {
     currentLang = currentLang === 'en' ? 'am' : 'en';
     renderMarketData();
     syncLiveForex();
-    const t = translations[currentLang];
-    document.getElementById('lang-toggle').innerText = t.toggle;
-    document.getElementById('main-title').innerHTML = `${t.title} <span class="accent">Pro</span>`;
-    document.getElementById('main-sub').innerText = t.sub;
-    document.getElementById('h-route').innerText = t.hRoute;
-    document.getElementById('h-market').innerText = t.hMarket;
-    document.getElementById('h-fuel').innerText = t.hFuel;
-    document.getElementById('h-curr').innerText = t.hCurr;
-    document.getElementById('btn-compare').innerText = t.btnCompare;
+    document.getElementById('lang-toggle').innerText = translations[currentLang].toggle;
 }
 
 function showFinal(n, p) { 
@@ -264,12 +263,7 @@ function showFinal(n, p) {
 }
 
 function closeAll() { document.getElementById('confirm-modal').style.display = "none"; }
-
-function closeSplitView() { 
-    document.body.classList.remove('split-active'); 
-    if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
-    map.setView([9.01, 38.76], 12);
-}
+function closeSplitView() { document.body.classList.remove('split-active'); }
 
 window.onload = () => {
     renderMarketData();
@@ -277,8 +271,7 @@ window.onload = () => {
     syncAddisWeather();
     startLiveTicker();
     Object.keys(hubs).forEach(name => {
-        L.circleMarker(hubs[name], {color:'#d29922', radius:8, fillOpacity:0.8}).addTo(map)
-         .on('click', () => handleMapClick(name));
+        L.circleMarker(hubs[name], {color:'#d29922', radius:8, fillOpacity:0.8}).addTo(map).on('click', () => handleMapClick(name));
         let li = document.createElement('li');
         li.innerHTML = `📍 ${name}`;
         li.onclick = () => handleMapClick(name);
