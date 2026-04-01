@@ -278,3 +278,29 @@ window.onload = () => {
         document.getElementById('hub-list').appendChild(li);
     });
 };
+function toggleLanguage() {
+    // 1. Swap the language variable
+    currentLang = currentLang === 'en' ? 'am' : 'en';
+    
+    // 2. Get the translations for the new language
+    const t = translations[currentLang];
+
+    // 3. Update the Button Text
+    document.getElementById('lang-toggle').innerText = t.toggle;
+
+    // 4. Update the Headers and Titles
+    document.getElementById('main-title').innerHTML = `${t.title} <span class="accent">Pro</span>`;
+    document.getElementById('main-sub').innerText = t.sub;
+    document.getElementById('h-route').innerText = t.hRoute;
+    document.getElementById('h-market').innerText = t.hMarket;
+    document.getElementById('h-fuel').innerText = t.hFuel;
+    document.getElementById('h-curr').innerText = t.hCurr;
+    
+    // 5. Update the Main Button
+    document.getElementById('btn-compare').innerText = t.btnCompare;
+
+    // 6. Refresh the dynamic data (Market, Calendar, etc.)
+    renderMarketData();
+    syncLiveForex();
+    updateCalendarBox();
+}
